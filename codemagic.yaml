@@ -1,0 +1,111 @@
+workflows:
+  ios-free-build:
+    name: iOS Unsigned Build
+    max_build_duration: 120
+    instance_type: mac_mini_m2
+
+    environment:
+      flutter: stable
+      xcode: latest
+
+    scripts:
+      - name: Show project structure
+        script: |
+          set -e
+          echo "Current directory:"
+          pwd
+
+          echo "Repository contents:"
+          ls -la
+
+          echo "iOS contents:"
+          ls -la ios || true
+
+      - name: Get Flutter dependencies
+        script: |
+          set -e
+          flutter pub get
+
+      - name: Ensure iOS platform exists
+        script: |
+          set -e
+
+          if [ ! -d "ios/Runner.xcodeproj" ]; then
+            echo "iOS project is missing. Generating it..."
+            flutter create --platforms=ios .
+          else
+            echo "iOS project exists."
+          fi
+
+      - name: Set iOS deployment target to 14.0
+        script: |
+          set -e
+
+          PROJECT_FILE="ios/Runner.xcodeproj/project.pbxproj"
+
+          if [ ! -f "$PROJECT_FILE" ]; then
+            echo "$PROJECT_FILE not found"
+            exit 1
+          fi
+
+          ruby - <<'RUBY'
+          path = "ios/Runner.xcodeproj/project.pbxproj"
+          text = File.read(path)
+
+          matches = text.scan(/IPHONEOS_DEPLOYMENT_TARGET = [^;]+;/)
+
+          if matches.empty?
+            abort "No IPHONEOS_DEPLOYMENT_TARGET setting was found."
+          end
+
+          text.gsub!(
+            /IPHONEOS_DEPLOYMENT_TARGET = [^;]+;/,
+            "IPHONEOS_DEPLOYMENT_TARGET = 14.0;"
+          )
+
+          File.write(path, text)
+
+          puts "Updated #{matches.length} deployment target setting(s) to iOS 14.0."
+          RUBY
+
+      - name: Build unsigned iOS application
+        script: |
+          set -e
+          flutter clean
+          flutter pub get
+          flutter build ios --release --no-codesign
+
+      - name: Package unsigned IPA
+        script: |
+          set -e
+
+          APP_PATH="build/ios/iphoneos/Runner.app"
+          OUTPUT_DIRECTORY="build/ios/iphoneos"
+          IPA_PATH="$OUTPUT_DIRECTORY/unsigned_app.ipa"
+
+          if [ ! -d "$APP_PATH" ]; then
+            echo "Runner.app was not generated."
+            exit 1
+          fi
+
+          cd "$OUTPUT_DIRECTORY"
+
+          rm -rf Payload unsigned_app.ipa
+          mkdir -p Payload
+          cp -R Runner.app Payload/
+
+          ditto \
+            -c \
+            -k \
+            --sequesterRsrc \
+            --keepParent \
+            Payload \
+            unsigned_app.ipa
+
+          echo "Unsigned IPA created successfully:"
+          ls -lh unsigned_app.ipa
+
+    artifacts:
+      - build/ios/iphoneos/unsigned_app.ipa
+      - build/ios/iphoneos/Runner.app
+      - /tmp/xcodebuild_logs/*.log
