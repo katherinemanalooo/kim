@@ -45,7 +45,7 @@ class AppState {
   static const String espBaseUrl = "http://192.168.4.1";
   static const String distanceEndpoint = "$espBaseUrl/api/distance";
   static const String ledEndpoint = "$espBaseUrl/api/status/";
-
+  static const String fanEndpoint = "$espBaseUrl/api/fan/";
   // Connectivity
   final ValueNotifier<bool> isConnected = ValueNotifier(false);
   final ValueNotifier<bool> sensorOk = ValueNotifier(false);
@@ -55,6 +55,7 @@ class AppState {
 
   // LED
   final ValueNotifier<bool> ledOn = ValueNotifier(false);
+  final ValueNotifier<bool> fanOn = ValueNotifier(false);
 
   // Settings
   final ValueNotifier<bool> darkMode = ValueNotifier(true);
@@ -118,6 +119,25 @@ class AppState {
     } catch (_) {
       isConnected.value = false;
       ledOn.value = previous; // revert if the ESP32 didn't respond
+    }
+  }
+  Future<void> setFan(bool on) async {
+    final previous = fanOn.value;
+    fanOn.value = on;
+
+    try {
+      final response = await http.post(
+        Uri.parse(fanEndpoint),
+        body: {
+          "state": on ? "on" : "off",
+        },
+      ).timeout(const Duration(seconds: 3));
+
+      debugPrint(response.body);
+      isConnected.value = true;
+    } catch (_) {
+      isConnected.value = false;
+      fanOn.value = previous;
     }
   }
 
@@ -199,7 +219,9 @@ class HomePage extends StatelessWidget {
       childAspectRatio: 0.85,
       children: [
         const LedGridButton(),
+        const FanGridButton(),
         AnimatedBuilder(
+
           animation: Listenable.merge(
               [AppState.instance.distanceCm, AppState.instance.metricSystem]),
           builder: (context, _) {
@@ -228,6 +250,7 @@ class HomePage extends StatelessWidget {
 /// response on tap.
 class LedGridButton extends StatelessWidget {
   const LedGridButton({super.key});
+
 
   @override
   Widget build(BuildContext context) {
@@ -277,7 +300,73 @@ class LedGridButton extends StatelessWidget {
     );
   }
 }
+class FanGridButton extends StatelessWidget {
+  const FanGridButton({super.key});
 
+  @override
+  Widget build(BuildContext context) {
+    final accent = CupertinoTheme.of(context).primaryColor;
+    final primary = primaryTextColor(context);
+    final secondary = secondaryTextColor(context);
+
+    return AnimatedBuilder(
+      animation: Listenable.merge([
+        AppState.instance.fanOn,
+        AppState.instance.isConnected,
+      ]),
+      builder: (context, _) {
+        final isOn = AppState.instance.fanOn.value;
+        final connected = AppState.instance.isConnected.value;
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: connected
+              ? () => AppState.instance.setFan(!isOn)
+              : null,
+          child: GlassCard(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      isOn ? "ON" : "OFF",
+                      style: TextStyle(
+                        color: isOn ? accent : secondary,
+                        fontSize: 13,
+                        letterSpacing: 2,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+
+                    Icon(
+                      CupertinoIcons.wind,
+                      color: isOn ? accent : secondary,
+                      size: 44,
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    Text(
+                      "Clip Fan",
+                      style: TextStyle(
+                        color: primary,
+                        fontSize: 17,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
 class SensorGridCard extends StatelessWidget {
   final IconData icon;
   final String label;
