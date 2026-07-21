@@ -30,10 +30,13 @@ Color secondaryTextColor(BuildContext context) {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await LiquidGlassWidgets.initialize();
-  AppState.instance.startPolling();
-  runApp(LiquidGlassWidgets.wrap(child: const MyApp()));
+  AppState.instance.checkConnection();
+  runApp(
+    LiquidGlassWidgets.wrap(
+      child: const MyApp(),
+    ),
+  );
 }
-
 /// Single shared source of truth for the whole app: connection status,
 /// sensor readings, LED state, and user settings. Every screen listens
 /// to the pieces it needs via ValueListenableBuilder / AnimatedBuilder.
@@ -96,7 +99,30 @@ class AppState {
       _clearSensorReading();
     }
   }
+  Future<void> checkConnection() async {
 
+    try {
+
+      final response = await http
+          .get(Uri.parse(espBaseUrl))
+          .timeout(
+          const Duration(seconds: 2)
+      );
+
+
+      if(response.statusCode == 200){
+        isConnected.value = true;
+      }
+
+    }
+
+    catch(e){
+
+      isConnected.value = false;
+
+    }
+
+  }
   // Wipes the displayed distance back to "—  —  —" — called whenever
   // the ultrasonic read fails OR the ESP32 itself is unreachable, so
   // the dashboard never shows a stale reading from before the drop.
